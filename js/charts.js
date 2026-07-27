@@ -64,10 +64,25 @@ function resumirDia(d) {
     expediente: (porCat.expediente || 0) + interrupcoes,
     treino: porCat.treino || 0,
     desvioAcordar: desvioCircular(d.sono?.acordou, anc.acordar),
-    desvioDeitar: desvioCircular(d.sono?.deitou, anc.deitar),
     desvioDormir: desvioCircular(d.sono?.dormiu, anc.dormir),
     sono: d.sono || {},
+    metaSono: diffMin(anc.dormir, anc.acordar),
+    // preenchido por vincularSono(): depende do "dormir" da véspera
+    sonoMin: null,
   };
+}
+
+/* O sono de um dia vai do "dormir" da véspera até o "acordar" de hoje.
+   Recebe o índice de TODOS os dias para que o primeiro dia do período
+   ainda consiga enxergar a véspera, mesmo fora do recorte. */
+function vincularSono(resumos, porData) {
+  resumos.forEach((r) => {
+    const vespera = porData[addDias(r.date, -1)];
+    const dormiuOntem = vespera && vespera.sono ? vespera.sono.dormiu || "" : "";
+    r.sonoMin = diffMin(dormiuOntem, r.sono.acordou || "");
+    r.dormiuOntem = dormiuOntem;
+  });
+  return resumos;
 }
 
 /* Estatística por tarefa: n, média, desvio padrão, mediana, mín, máx
@@ -156,6 +171,43 @@ function graficoTempoUtil(resumos) {
   return svg;
 }
 
+/* Barras verticais: horas de sono por dia, com linha da meta. */
+function graficoSonoHoras(resumos) {
+  const pts = resumos.filter((r) => r.sonoMin !== null);
+  if (!pts.length) return vazio("Sem noites completas no período. O sono precisa do horário de dormir da véspera e do acordar do dia.");
+
+  const { h, ml, mr, mt, mb } = CH;
+  const w = Math.max(720, pts.length * 26);
+  const iw = w - ml - mr, ih = h - mt - mb;
+  const meta = pts.find((p) => p.metaSono)?.metaSono || 480;
+  const maxY = Math.max(meta, ...pts.map((p) => p.sonoMin)) * 1.12;
+  const x = (i) => ml + (iw / pts.length) * (i + 0.5);
+  const y = (v) => mt + ih - (v / maxY) * ih;
+  const bw = Math.max(4, Math.min(22, (iw / pts.length) * 0.62));
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} ${h}`, class: "chart", width: w, height: h, role: "img" });
+  for (let v = 0; v <= maxY; v += 120) {
+    svg.appendChild(svgEl("line", { x1: ml, x2: w - mr, y1: y(v), y2: y(v), class: "grid" }));
+    svg.appendChild(svgEl("text", { x: ml - 8, y: y(v) + 4, class: "axis", "text-anchor": "end" }, `${Math.round(v / 60)}h`));
+  }
+  pts.forEach((p, i) => {
+    svg.appendChild(svgEl("rect", {
+      x: x(i) - bw / 2, y: y(p.sonoMin), width: bw, height: Math.max(0, y(0) - y(p.sonoMin)), rx: 3,
+      class: "bar " + (p.sonoMin >= meta ? "bar-sono-ok" : "bar-sono-baixo"),
+    }, [svgEl("title", {}, `${formatarDataBR(p.date)}\nDormiu ${p.dormiuOntem || "—"} → acordou ${p.sono.acordou || "—"}\nSono: ${formatDuracao(p.sonoMin)}`)]));
+  });
+  // linha da meta
+  svg.appendChild(svgEl("line", { x1: ml, x2: w - mr, y1: y(meta), y2: y(meta), class: "meta-linha" }));
+  svg.appendChild(svgEl("text", { x: w - mr, y: y(meta) - 5, class: "axis", "text-anchor": "end" }, `meta ${formatDuracao(meta)}`));
+
+  const passoX = Math.ceil(pts.length / 12);
+  pts.forEach((p, i) => {
+    if (i % passoX) return;
+    svg.appendChild(svgEl("text", { x: x(i), y: h - 10, class: "axis", "text-anchor": "middle" }, formatarDataCurta(p.date)));
+  });
+  return svg;
+}
+
 /* Barras horizontais: horas acumuladas por categoria. */
 function graficoCategorias(resumos) {
   const totais = {};
@@ -190,7 +242,7 @@ function graficoSono(resumos) {
   const w = Math.max(720, pts.length * 26);
   const iw = w - ml - mr, ih = h - mt - mb;
   const vals = [];
-  pts.forEach((p) => { [p.desvioAcordar, p.desvioDeitar, p.desvioDormir].forEach((v) => { if (v !== null) vals.push(v); }); });
+  pts.forEach((p) => { [p.desvioAcordar, p.desvioDormir].forEach((v) => { if (v !== null) vals.push(v); }); });
   const lim = Math.max(30, Math.ceil(Math.max(...vals.map(Math.abs)) / 15) * 15);
   const x = (i) => ml + (iw / pts.length) * (i + 0.5);
   const y = (v) => mt + ih / 2 - (v / lim) * (ih / 2);
@@ -215,7 +267,6 @@ function graficoSono(resumos) {
       [svgEl("title", {}, `${formatarDataBR(p.date)}\n${nome}: ${formatDelta(p[campo])}`)])));
   };
   serie("desvioAcordar", "#f59e0b", "Acordar");
-  serie("desvioDeitar", "#8b5cf6", "Deitar");
   serie("desvioDormir", "#0ea5e9", "Dormir");
 
   const passoX = Math.ceil(pts.length / 12);
@@ -228,7 +279,7 @@ function graficoSono(resumos) {
 
 function legendaSono() {
   const wrap = el("div", { class: "legenda" });
-  [["Acordar", "#f59e0b"], ["Deitar", "#8b5cf6"], ["Dormir", "#0ea5e9"]].forEach(([n, c]) => {
+  [["Acordar", "#f59e0b"], ["Dormir", "#0ea5e9"]].forEach(([n, c]) => {
     wrap.appendChild(el("span", { class: "leg-item" }, [
       el("i", { class: "leg-dot", style: `background:${c}` }), n,
     ]));

@@ -290,6 +290,9 @@ input.hora {
 .chart .bar-abaixo { fill: var(--indigo); opacity: .55; }
 .chart .bar-excecao { fill: var(--fg-3); opacity: .5; }
 .chart .meta-tick { stroke: var(--warn); stroke-width: 2; }
+.chart .meta-linha { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart .bar-sono-ok { fill: #0ea5e9; }
+.chart .bar-sono-baixo { fill: #0ea5e9; opacity: .42; }
 .chart .faixa-ok { fill: var(--ok); opacity: .1; }
 
 .legenda { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--fg-2); }

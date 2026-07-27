@@ -16,11 +16,12 @@ const CATEGORIAS = {
   descanso:    { label: "Descanso",    cor: "#0ea5e9" },
 };
 
-// Âncoras do dia (também editáveis na Configuração).
+/* Âncoras do dia (editáveis na Configuração).
+   "dormir" marca o início do processo de dormir (largar telas, deitar) —
+   esse intervalo conta como sono, por isso não há âncora separada de "deitar". */
 const ANCORAS_PADRAO = {
   acordar: "07:00",
-  deitar:  "22:40",
-  dormir:  "23:00",
+  dormir:  "22:40",
 };
 
 // Dia útil COM expediente — grade base informada pelo usuário.

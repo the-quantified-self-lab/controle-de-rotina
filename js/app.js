@@ -3,7 +3,7 @@
    ============================================================ */
 "use strict";
 
-const VERSAO = "1.0.0";
+const VERSAO = "1.1.0";
 
 // Acima disso, a duração provavelmente veio de fim/início invertidos.
 const LIMITE_DURACAO_SUSPEITA = 16 * 60;
@@ -61,6 +61,9 @@ async function irPara(iso) {
   let d = await carregarDia(iso);
   d = d ? normalizarDia(d, estado.cfg) : criarDiaVazio(iso, estado.cfg);
   estado.dia = d;
+  // o sono deste dia começa no "dormir" da véspera
+  const vespera = await carregarDia(addDias(iso, -1));
+  estado.dormiuOntem = vespera && vespera.sono ? vespera.sono.dormiu || "" : "";
   renderRegistro();
 }
 
@@ -78,14 +81,24 @@ function renderKPIs() {
     if (sub) box.appendChild(el("div", { class: "k-sub", text: sub }));
     return box;
   };
+  /* Sono do dia = "dormir" da véspera → "acordar" de hoje.
+     O "dormir" registrado hoje conta para o sono de amanhã. */
+  const anc = estado.dia.ancoras || {};
+  const metaSono = diffMin(anc.dormir, anc.acordar);
+  const sonoMin = diffMin(estado.dormiuOntem || "", estado.dia.sono.acordou || "");
+  let subSono;
+  if (sonoMin !== null) subSono = `de ${formatDuracao(metaSono)} · ${formatDelta(sonoMin - metaSono)}`;
+  else if (!estado.dormiuOntem) subSono = "falta o dormir de ontem";
+  else subSono = "falta o acordar de hoje";
+
+  cx.appendChild(kpi("Sono", formatDuracao(sonoMin), subSono,
+    sonoMin !== null && metaSono !== null && sonoMin >= metaSono ? "var(--ok)" : null));
   cx.appendChild(kpi("Tempo útil", formatDuracao(r.tempoUtil),
     alvo ? `de ${formatDuracao(alvo)} · ${formatDelta(delta)}` : null,
     alvo && r.tempoUtil >= alvo ? "var(--ok)" : null));
   cx.appendChild(kpi("Expediente", formatDuracao(r.expediente),
     r.interrupcoes ? `+${formatDuracao(r.interrupcoes)} interrup.` : null));
   cx.appendChild(kpi("Treino", formatDuracao(r.treino)));
-  const preenchidos = (estado.dia.tarefas || []).filter((t) => t.inicio && t.fim).length;
-  cx.appendChild(kpi("Blocos", `${preenchidos}/${(estado.dia.grade || []).length}`, "preenchidos"));
 }
 
 // ---------------- sono ----------------
@@ -93,7 +106,7 @@ function renderSono() {
   const cx = document.getElementById("sono-campos");
   cx.innerHTML = "";
   const anc = estado.dia.ancoras || {};
-  [["acordou", "Acordar", anc.acordar], ["deitou", "Deitar", anc.deitar], ["dormiu", "Dormir", anc.dormir]]
+  [["acordou", "Acordar", anc.acordar], ["dormiu", "Dormir", anc.dormir]]
     .forEach(([k, label, meta]) => {
       const linha = el("div", { class: "tempos", style: "margin-bottom:10px" });
       const campo = el("div", { class: "campo-hora", style: "grid-column:1/3" });
@@ -116,14 +129,14 @@ function renderSono() {
       inp.addEventListener("input", () => {
         inp.value = mascaraHora(inp.value);
         estado.dia.sono[k] = inp.value;
-        atualizarInfo(); agendarSalvar();
+        atualizarInfo(); renderKPIs(); agendarSalvar();
       });
       campo.appendChild(inp);
       linha.appendChild(campo);
       const agora = el("button", { class: "btn-agora", text: "agora" });
       agora.addEventListener("click", () => {
         estado.dia.sono[k] = horaAgora(); inp.value = estado.dia.sono[k];
-        atualizarInfo(); agendarSalvar();
+        atualizarInfo(); renderKPIs(); agendarSalvar();
       });
       linha.appendChild(agora);
       cx.appendChild(linha);
@@ -201,6 +214,13 @@ function renderInterrupcoes() {
 }
 
 // ---------------- tarefas ----------------
+function atualizarContagemBlocos() {
+  const alvo = document.getElementById("contagem-blocos");
+  if (!alvo) return;
+  const feitos = (estado.dia.tarefas || []).filter((t) => t.inicio && t.fim).length;
+  alvo.textContent = `· ${feitos}/${(estado.dia.grade || []).length} preenchidos`;
+}
+
 function renderTarefas() {
   const cx = document.getElementById("lista-tarefas");
   cx.innerHTML = "";
@@ -231,7 +251,7 @@ function renderTarefas() {
       });
       i.addEventListener("input", () => {
         i.value = mascaraHora(i.value); t[k] = i.value;
-        atualizarDur(); marcarPreenchida(); renderKPIs(); agendarSalvar();
+        atualizarDur(); marcarPreenchida(); atualizarContagemBlocos(); renderKPIs(); agendarSalvar();
       });
       inputs[k] = i; c.appendChild(i); tempos.appendChild(c);
     });
@@ -339,6 +359,7 @@ function renderRegistro() {
 
   document.getElementById("obs-dia").value = d.observacao || "";
   renderKPIs(); renderSono(); renderChaveMestra(); renderInterrupcoes(); renderTarefas();
+  atualizarContagemBlocos();
 }
 
 /* Troca o tipo de dia: re-snapshota a grade do novo tipo, preservando
@@ -355,9 +376,13 @@ function mudarTipoDia(novo) {
 
 // ---------------- aba Análise ----------------
 async function renderAnalise() {
-  const todos = await listarDias();
-  const dias = filtrarPeriodo(todos.map((d) => normalizarDia(d, estado.cfg)), estado.periodo);
-  const resumos = dias.map(resumirDia);
+  const todos = (await listarDias()).map((d) => normalizarDia(d, estado.cfg));
+  // índice completo: o sono do 1º dia do período depende da véspera, que
+  // pode estar fora do recorte
+  const porData = {};
+  todos.forEach((d) => { porData[d.date] = d; });
+  const dias = filtrarPeriodo(todos, estado.periodo);
+  const resumos = vincularSono(dias.map(resumirDia), porData);
   const cx = document.getElementById("analise-conteudo");
   cx.innerHTML = "";
 
@@ -375,10 +400,14 @@ async function renderAnalise() {
     if (sub) b.appendChild(el("div", { class: "k-sub", text: sub }));
     return b;
   };
+  const noites = resumos.map((r) => r.sonoMin).filter((v) => v !== null);
+  const sonoMedio = media(noites), sonoDesvio = desvioPadrao(noites);
   kp.appendChild(kpi("Dias registrados", String(resumos.length)));
   kp.appendChild(kpi("Tempo útil total", formatDuracao(utilTotal)));
   kp.appendChild(kpi("Média por dia", formatDuracao(utilMedio),
     utilDesvio !== null ? `desvio padrão ${formatDuracao(utilDesvio)}` : null));
+  kp.appendChild(kpi("Sono médio", formatDuracao(sonoMedio),
+    noites.length ? `${noites.length} ${noites.length === 1 ? "noite" : "noites"}${sonoDesvio !== null ? ` · dp ${formatDuracao(sonoDesvio)}` : ""}` : "sem noites completas"));
   kp.appendChild(kpi("Expediente total", formatDuracao(expTotal)));
 
   if (!resumos.length) {
@@ -389,6 +418,7 @@ async function renderAnalise() {
   }
 
   cx.appendChild(molduraSVG("Tempo útil por dia", graficoTempoUtil(resumos)));
+  cx.appendChild(molduraSVG("Horas de sono por noite", graficoSonoHoras(resumos)));
   const cSono = molduraSVG("Regularidade do sono (desvio da meta)", graficoSono(resumos));
   cSono.appendChild(legendaSono());
   cx.appendChild(cSono);
@@ -451,7 +481,7 @@ function renderConfig() {
   // âncoras
   const ca = document.getElementById("cfg-ancoras");
   ca.innerHTML = "";
-  [["acordar", "Acordar"], ["deitar", "Deitar"], ["dormir", "Dormir"]].forEach(([k, lab]) => {
+  [["acordar", "Acordar"], ["dormir", "Dormir"]].forEach(([k, lab]) => {
     const c = el("div", { class: "campo-hora", style: "margin-bottom:12px" });
     c.appendChild(el("label", { text: lab }));
     const i = el("input", { type: "text", class: "hora", inputmode: "numeric", maxlength: "5", value: estado.cfg.ancoras[k] || "" });

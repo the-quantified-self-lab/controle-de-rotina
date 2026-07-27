@@ -91,7 +91,7 @@ function criarDiaVazio(date, cfg, tipoForcado) {
     // snapshot: congela a grade e as âncoras vigentes hoje
     grade,
     ancoras: { ...cfg.ancoras },
-    sono: { acordou: "", deitou: "", dormiu: "" },
+    sono: { acordou: "", dormiu: "" },
     chave_mestra: { ativa: false, tipo: "dia_inteiro", inicio: "", fim: "", motivo: "" },
     tarefas: grade.map((t) => ({ id: t.id, inicio: "", fim: "", obs: "" })),
     interrupcoes: [],
@@ -109,8 +109,10 @@ function normalizarDia(d, cfg) {
     d.grade = (cfg.grades[tipo] || []).map((t) => ({ ...t }));
   }
   if (!d.ancoras) d.ancoras = { ...cfg.ancoras };
-  if (!d.sono) d.sono = { acordou: "", deitou: "", dormiu: "" };
-  if (d.sono.deitou === undefined) d.sono.deitou = "";
+  if (!d.sono) d.sono = { acordou: "", dormiu: "" };
+  // "deitou" era uma âncora separada em versões antigas; hoje o intervalo
+  // deitar→dormir faz parte do sono. O valor antigo fica inerte no registro.
+  if (d.ancoras && d.ancoras.deitar !== undefined) delete d.ancoras.deitar;
   if (!d.chave_mestra) d.chave_mestra = { ativa: false, tipo: "dia_inteiro", inicio: "", fim: "", motivo: "" };
   if (!Array.isArray(d.interrupcoes)) d.interrupcoes = Array.isArray(d.interrupcoes_escritorio) ? d.interrupcoes_escritorio : [];
   delete d.interrupcoes_escritorio;
@@ -156,6 +158,9 @@ const csvEsc = (v) => {
 function montarLinhasCSV(dias) {
   const dows = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
   const linhas = [];
+  // índice por data: o sono de um dia depende do "dormir" da véspera
+  const porData = {};
+  dias.forEach((d) => { porData[d.date] = d; });
   for (const d of dias) {
     const dow = dows[new Date(d.date + "T00:00:00").getDay()];
     const ch = d.chave_mestra || {};
@@ -177,7 +182,7 @@ function montarLinhasCSV(dias) {
     });
 
     const anc = d.ancoras || {};
-    [["acordou", "Acordar", anc.acordar], ["deitou", "Deitar", anc.deitar], ["dormiu", "Dormir", anc.dormir]]
+    [["acordou", "Acordar", anc.acordar], ["dormiu", "Dormir", anc.dormir]]
       .forEach(([k, nome, meta]) => {
         const v = (d.sono || {})[k] || "";
         const desvio = v && meta ? desvioCircular(v, meta) : null;
@@ -187,6 +192,21 @@ function montarLinhasCSV(dias) {
           "", d.observacao || "", chAtiva, ch.tipo || "", ch.motivo || "",
         ]);
       });
+
+    /* Duração do sono do dia = "dormir" da véspera → "acordar" de hoje.
+       O "dormir" de hoje pertence ao sono de amanhã, não ao deste dia. */
+    const vespera = porData[addDias(d.date, -1)];
+    const dormiuOntem = vespera && vespera.sono ? vespera.sono.dormiu || "" : "";
+    const acordouHoje = (d.sono || {}).acordou || "";
+    const durSono = diffMin(dormiuOntem, acordouHoje);
+    const metaSono = diffMin(anc.dormir, anc.acordar);
+    linhas.push([
+      d.date, dow, d.tipo_dia, "sono", "duracao_sono", "Sono (total da noite)", "sono",
+      dormiuOntem, acordouHoje, durSono === null ? "" : durSono,
+      anc.dormir || "", anc.acordar || "", metaSono === null ? "" : metaSono,
+      durSono === null || metaSono === null ? "" : durSono - metaSono,
+      "", d.observacao || "", chAtiva, ch.tipo || "", ch.motivo || "",
+    ]);
 
     (d.interrupcoes || []).forEach((i) => {
       const dur = diffMin(i.inicio, i.fim);
