@@ -43,8 +43,15 @@ function sairDaConta() {
   sessionStorage.removeItem(STATE_KEY);
 }
 
-// URI de redirecionamento = a própria página, sem query/hash.
-const redirectURI = () => location.origin + location.pathname;
+/* URI de redirecionamento = a própria página, sem query/hash.
+   Normaliza para a forma de diretório (termina em "/"), porque o Google
+   exige correspondência EXATA com o que está cadastrado no Console.
+   Sem isso, abrir a app por ".../index.html" geraria redirect_uri_mismatch. */
+function redirectURI() {
+  let caminho = location.pathname.replace(/index\.html$/i, "");
+  if (!caminho.endsWith("/")) caminho += "/";
+  return location.origin + caminho;
+}
 
 function iniciarLogin(retomarEm) {
   const state = Math.random().toString(36).slice(2) + Date.now().toString(36);

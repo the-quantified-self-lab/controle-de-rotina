@@ -4,7 +4,7 @@
    - Google APIs (accounts.google.com / sheets.googleapis.com): NUNCA cacheia (network-only).
    Bump CACHE_VERSION a cada deploy para forçar atualização.
 */
-const CACHE_VERSION = "v1.0.0";
+const CACHE_VERSION = "v1.0.1";
 const CACHE_NAME = `controle-rotina-${CACHE_VERSION}`;
 
 const SHELL = [
