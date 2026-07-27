@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="pt-BR" data-tema="light">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover: usa a tela toda no iPhone (notch/Dynamic Island).
+     maximum-scale + user-scalable: reforço anti-zoom. O que realmente
+     impede o zoom ao focar campos é a fonte de 16px definida no CSS. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Controle de Rotina</title>
+<meta name="description" content="Diário de rotina: registro diário de horários e análise dos dados.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1117" media="(prefers-color-scheme: dark)">
+
+<!-- iOS / Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rotina">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div style="flex:1">
+      <h1>Controle de Rotina</h1>
+      <div class="sub" id="sub-topo">carregando…</div>
+    </div>
+    <button class="icon-btn" id="btn-sync" title="Sincronizar com Google Sheets" aria-label="Sincronizar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-tema" title="Alternar tema" aria-label="Alternar tema">
+      <svg id="ico-tema" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2M12 20.5v2M3.9 3.9l1.4 1.4M18.7 18.7l1.4 1.4M1.5 12h2M20.5 12h2M3.9 20.1l1.4-1.4M18.7 5.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="app">
+  <!-- ============ ABA: REGISTRO ============ -->
+  <section class="tab-pane active" id="pane-registro">
+    <div class="datebar">
+      <button class="icon-btn" id="dia-ant" aria-label="Dia anterior">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="data-atual">
+        <div class="d1" id="data-titulo">—</div>
+        <input type="date" id="data-input" aria-label="Escolher data" class="hidden">
+        <div class="d2" id="data-sub">—</div>
+      </div>
+      <button class="icon-btn" id="btn-cal" aria-label="Calendário">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/></svg>
+      </button>
+      <button class="icon-btn" id="dia-prox" aria-label="Próximo dia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+
+    <div class="card hidden" id="cal-wrap"><div id="cal-conteudo"></div></div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="card">
+      <div class="card-head"><h3>Tipo de dia</h3></div>
+      <select id="tipo-dia"></select>
+      <div style="margin-top:10px">
+        <input type="text" id="obs-dia" placeholder="Observação geral do dia (opcional)">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Sono</h3></div>
+      <div id="sono-campos"></div>
+    </div>
+
+    <div class="card bloco-especial" id="card-chave">
+      <div class="card-head">
+        <h3>Chave mestra</h3>
+        <label class="switch">
+          <input type="checkbox" id="chave-ativa"><span class="track"></span>
+        </label>
+      </div>
+      <p class="tiny muted" style="margin:0">Marca o dia como exceção (viagem, doença, imprevisto). Os dados continuam registrados e ficam sinalizados na análise.</p>
+      <div id="chave-detalhes" class="hidden" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="card-interrup">
+      <div class="card-head">
+        <h3>Interrupções do escritório</h3>
+        <button class="btn btn-sm btn-ghost" id="add-interrup">+ Registrar</button>
+      </div>
+      <p class="tiny muted" style="margin:0 0 2px">Descontam do Tempo Útil e somam ao expediente total.</p>
+      <div id="lista-interrup"></div>
+    </div>
+
+    <h3 style="font-size:14px;margin:18px 2px 10px">Blocos do dia</h3>
+    <div id="lista-tarefas"></div>
+  </section>
+
+  <!-- ============ ABA: ANÁLISE ============ -->
+  <section class="tab-pane" id="pane-analise">
+    <div class="seg" id="seg-periodo">
+      <button data-p="7">7 dias</button>
+      <button data-p="30" class="active">30 dias</button>
+      <button data-p="90">90 dias</button>
+      <button data-p="tudo">Tudo</button>
+    </div>
+    <div class="kpis" id="kpis-analise"></div>
+    <div id="analise-conteudo"></div>
+  </section>
+
+  <!-- ============ ABA: CONFIGURAÇÃO ============ -->
+  <section class="tab-pane" id="pane-config">
+    <div class="card">
+      <div class="card-head"><h3>Google Sheets</h3></div>
+      <div id="sync-status" class="status-sync"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-primary" id="btn-login">Conectar conta Google</button>
+        <button class="btn" id="btn-sync-2">Sincronizar agora</button>
+      </div>
+      <button class="btn btn-ghost btn-block btn-sm hidden" id="btn-logout" style="margin-top:8px">Desconectar</button>
+      <p class="tiny muted" style="margin:10px 0 0">
+        Planilha: <span class="mono" id="sheet-id-txt"></span><br>
+        Aba: <strong>Registros</strong> — o app reescreve essa aba inteira a cada sincronização.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Backup local</h3></div>
+      <div class="btn-row">
+        <button class="btn" id="btn-exp-json">Exportar JSON</button>
+        <button class="btn" id="btn-exp-csv">Exportar CSV</button>
+      </div>
+      <label class="btn btn-ghost btn-block btn-sm" style="margin-top:8px">
+        Importar JSON
+        <input type="file" id="file-import" accept="application/json,.json" class="hidden">
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Âncoras do dia</h3></div>
+      <div id="cfg-ancoras"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Grade de horários</h3></div>
+      <div class="aviso">
+        Editar a grade <strong>não altera dias já registrados</strong> — cada dia guarda uma cópia da grade vigente quando foi criado. As mudanças valem para os próximos dias.
+      </div>
+      <select id="cfg-tipo-dia" style="margin-bottom:10px"></select>
+      <div id="cfg-lista"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-sm" id="cfg-add">+ Adicionar bloco</button>
+        <button class="btn btn-sm btn-danger" id="cfg-reset">Restaurar padrão</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Sobre</h3></div>
+      <p class="tiny muted" style="margin:0">
+        Controle de Rotina · <span id="versao-app"></span><br>
+        Instale pelo menu do navegador (“Adicionar à Tela de Início”) para abrir em tela cheia.
+      </p>
+    </div>
+
+    <div class="rodape" id="rodape"></div>
+  </section>
+</main>
+
+<nav class="tabbar" role="tablist">
+  <button data-tab="registro" class="active" role="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5h6M5.5 6.5h13a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2z"/><path d="M8.5 12h7M8.5 16h4"/></svg>
+    Registro
+  </button>
+  <button data-tab="analise" role="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    Análise
+  </button>
+  <button data-tab="config" role="tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Configuração
+  </button>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/util.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/db.js"></script>
+<script src="js/sheets.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
